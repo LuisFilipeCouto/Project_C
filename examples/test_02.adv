@@ -1,0 +1,78 @@
+/* 
+-------------------------------------------------------------------------------------------------------------
+Segundo exemplo, também para demonstrar capacidades da linguagem em criar e manipular automatos, vistas e animações
+-------------------------------------------------------------------------------------------------------------
+*/
+
+alphabet { 'a', 'b', 'c' }
+
+complete DFA a3 <<<
+
+    state A, B, C, D, E;
+
+    A [initial = true]; 
+
+    transition 
+        A -> 'a', 'b'-> B,
+        A -> 'c' -> A,
+        B -> 'b' -> C,
+        B -> 'a', 'c' -> B,
+        C -> 'c' -> D,
+        C -> 'a','b' -> E,
+        E -> 'a','b','c'-> D,
+        D -> 'a', 'b', 'c' -> A;
+>>>
+
+view v3 of a3 <<<
+
+    grid g3 (30,50) [ 
+        step = 0.7,
+        margin = 0.45,
+        color = gray,
+        line = solid
+    ];
+
+    place A at (2,2), B at (8,2), C at (16,2), D at (4,5);
+
+    point pm = (D) * 2;
+
+    place E at pm;
+
+    <A,B>#label [align=below right];
+    <B,C>#label [align=above center];
+    <D,A>#label [align=below center];
+  
+>>>
+
+animation m3 <<<
+
+    viewport vp3 for v3 at (100,100) -- ++(600,1000);
+
+    on vp3 <<<
+        show g3;
+        pause;
+        show C, B, D;
+        pause;
+        show A;
+        show <A,B>, <B,C>;
+        pause;
+        show <C,D>;
+        pause;
+        show E, <C,E>;
+        pause;
+        show B [highlighted = true];
+        pause;
+        show <B,B>;
+        pause;
+        show A [highlighted = true];
+        pause;
+        show <A,A>;
+        pause;
+        show <E,D>, <D,A>;
+        pause;
+        show A [accepting = true], B [accepting = true], D [accepting = true];
+        pause;
+    >>>
+>>>
+
+play m1;

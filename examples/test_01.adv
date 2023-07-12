@@ -1,0 +1,88 @@
+/* 
+-------------------------------------------------------------------------------------------------------------
+Primeiro exemplo para demonstrar capacidades da linguagem em criar e manipular automatos, vistas e animações
+-------------------------------------------------------------------------------------------------------------
+*  Contem operacoes entre varias expressoes de varios tipos
+*  Contem criação de alfabeto com digitos e letras 
+*  Contem criacao de estados e transicoes looped e em linha com palavra vazia
+*  Contem mudanca de propriedades de estados (initial, accepting, highlighted)
+*  Contem criacao de view com posicionamento de estados e transicoes
+*  Contem criacao de grid costumizada
+*  Contem acesso ao ponto de um estado atraves da notacao: (A)
+*  Contem alteracao do alinhamento de label de transicoes
+*  Contem posicionamento de label de transicoes em pontos
+*  Contem criacao de viewports com tamanho especifico e com canto esquerdo superior em ponto especifico
+*  Contem demonstracao de animacao com pausas e alteracao de propriedades
+-------------------------------------------------------------------------------------------------------------
+*/
+
+// Isto e um comentario em linha, tambem aceite nesta linguagem
+
+alphabet { 'a', 'b', 'c', '1', '8'}
+
+NFA a1 <<<
+
+    state A, B;
+    state C;
+
+    A [initial = true];
+    B [accepting = true];
+    
+    transition 
+        A -> 'a','b' -> A,
+        A -> 'a','b','c' -> B,
+        A -> '1', '8' -> C,
+        B -> 'a', 'c' -> B,
+        C -> B; // Palavra vazia
+>>>
+
+
+view v1 of a1 <<<
+
+    grid g3 (30,50) [ 
+        step = 0.5,
+        margin = 0.45,
+        color = blue,
+        line = solid
+    ];
+
+    place A at (2,5), B at (8,5);
+
+    point pm = ((A) + (B)) / (2^2 / 2);
+    pm = pm + (0, 4);
+    place C at pm;
+
+    <A,B>#label [align = below left];
+    place <A,C>#label at (4, 7);
+	
+>>>
+
+animation m1 <<<
+
+	viewport vp1 for v1 at (250,20) -- ++(700,500);
+	
+	on vp1 <<<
+		show g3;
+		pause;
+        	show A, B [accepting = false];
+        	pause;
+        	show <A,B>;
+        	pause;
+        	show <A,A>;
+        	pause;
+            show C;
+            pause;
+            show <A,C>;
+            pause;
+            show <C,B>;
+            pause;
+            show B [highlighted = true];
+            pause ;
+            show <B,B>;
+            pause;
+        	show B [accepting = true];
+        	pause;
+    	>>>
+>>>
+
+play m1;

@@ -1,0 +1,537 @@
+module(name, stat) ::= <<
+from enum import Enum
+import math
+import cv2 as cv
+import numpy as np
+
+#----------------------------------------------------------------------------------------------------------------------------#
+
+class Scale(Enum):
+    SCALE_FROM = 1
+    SCALE_TO = 50
+
+#----------------------------------------------------------------------------------------------------------------------------#
+
+class Align(Enum):
+    ABOVE_CENTERED = 0
+    ABOVE_LEFT = 1
+    ABOVE_RIGHT = 2
+    BELOW_CENTERED = 3
+    BELOW_LEFT = 4
+    BELOW_RIGHT = 5
+
+#----------------------------------------------------------------------------------------------------------------------------#
+
+class Color(Enum):
+    RED = (0,0,255)
+    GREEN = (0,255,0)
+    BLUE = (255,0,0)
+    GRAY = (200,200,200)
+
+#----------------------------------------------------------------------------------------------------------------------------#
+
+class Point:
+    def __init__(self, x, y, type=1):
+        self.x = self.__to_Cartesian__(x, y, type)[0]
+        self.y = self.__to_Cartesian__(x, y, type)[1]
+    
+    def __to_Cartesian__(self, x, y, type):
+        if(type == 0):  
+            return (y * math.cos(x), y * math.sin(x))
+        else:
+            return (x, y)
+
+    def __add__(self, other):
+        return Point(self.x + other.x, self.y + other.y)
+
+    def __sub__(self, other):
+        return Point(self.x - other.x, self.y - other.y)
+
+    def __mul__(self, scalar):
+        return Point(self.x * scalar, self.y * scalar)
+
+    def __truediv__(self, scalar):
+        return Point(self.x / scalar, self.y / scalar)
+
+    def __floordiv__(self, scalar):
+        return Point(self.x // scalar, self.y // scalar)
+
+    def __str__(self):
+        return '(' + str(self.x) + ',' + str(self.y) + ')'
+
+    def roundToInt(self):
+        return (int(round(self.x)), int(round(self.y)))
+
+    def norm(self):
+        return math.sqrt(self.x**2 + self.y**2)
+
+#----------------------------------------------------------------------------------------------------------------------------#
+
+class State:
+    def __init__(self, identifier):
+        self.identifier = identifier
+        self.initial = False
+        self.accepting = False
+        self.highlighted = False
+    
+    def __str__(self):
+        return "State: " + self.identifier + ", initial=" + str(self.initial) + ", accepting=" + str(self.accepting) + ", highlighted=" + str(self.highlighted)
+
+class Transition:
+    def __init__(self, identifier, from_state, to_state, symbols):
+        self.identifier = identifier
+        self.from_state = from_state
+        self.to_state = to_state
+        self.symbols = symbols
+        self.label_alignment = Align.ABOVE_CENTERED
+        self.label_reference_point = None
+
+    def get_label_description(self):
+        description = ""
+        for symbol in self.symbols:
+            description += symbol + ", "
+
+        return description[:-2]
+
+    def __str__(self):
+        return "Transition: " + self.identifier + ", from=" + str(self.from_state) + ", to=" + str(self.to_state) + ", symbols=" + str(self.symbols)
+
+#----------------------------------------------------------------------------------------------------------------------------#
+
+class Grid:
+    def __init__(self, identifier, dimensions, step, margin, color, line):
+        self.identifier = identifier
+        self.width = dimensions.x
+        self.height = dimensions.y
+        self.step = step
+        self.margin = margin
+        self.color = color
+        self.line = line
+
+    def __str__(self):
+        return "Grid: " + self.identifier + ", width=" + str(self.width) + ", height=" + str(self.height) + ", step=" + str(self.step) + ", margin=" + str(self.margin) + ", color=" + str(self.color) + ", line=" + str(self.line)
+
+#----------------------------------------------------------------------------------------------------------------------------#
+
+class Viewport:
+    def __init__(self, identifier, associated_view, point1, point2):
+        self.identifier = identifier
+        self.associated_view = associated_view
+        self.width = point2.x
+        self.height = point2.y
+        self.corner_x = point1.x
+        self.corner_y = point1.y
+        self.port = self.__create_port__()
+    
+    def __create_port__(self):
+        port = np.zeros((self.width, self.height, 3), dtype="uint8")
+        port.fill(255)
+        return port
+
+    def __str__(self):
+        return "Viewport: " + self.identifier + ", associated_view=" + str(self.associated_view.identifier) + ", width=" + str(self.width) + ", height=" + str(self.height) + ", corner_x=" + str(self.corner_x) + ", corner_y=" + str(self.corner_y)
+
+#----------------------------------------------------------------------------------------------------------------------------#
+
+class Automaton:
+    def __init__(self, id, type, alphabet):
+        self.id = id
+        self.type = type
+        self.alphabet = alphabet
+        self.states = []
+        self.transitions = []
+
+    def add_state(self, state):
+        self.states.append(state)
+    
+    def add_transition(self, transition):
+        self.transitions.append(transition)
+
+    def modify_state(self, identifier, property, value):
+        for st in self.states:
+            if st.identifier == identifier:
+                if(property == "initial"):
+                    st.initial = value
+                elif(property == "accepting"):
+                    st.accepting = value
+                elif(property == "highlighted"):
+                    st.highlighted = value
+
+    def __str__(self):
+        return "Automaton: " + self.id + ", alphabet=[" + str(', '.join(self.alphabet)) + "]" + ", states=[" + str(', '.join([obj.identifier for obj in self.states])) + "]" + ", transitions=[" + str(', '.join([obj.identifier for obj in self.transitions])) + "]"
+
+#----------------------------------------------------------------------------------------------------------------------------#
+
+class View:
+    def __init__(self, identifier, associated_automaton):
+        self.identifier = identifier
+        self.associated_automaton = associated_automaton
+        self.figures = {}
+
+    def addFigure(self, key, figure):
+        self.figures[key] = figure
+
+    def draw(self, mat):
+        for f in self.figures.values():
+            f.draw(mat)
+
+    def __str__(self):
+        return "View: " + self.identifier + ", associated_automaton=" + str(self.associated_automaton.id) + ", figures=[" + str(', '.join(self.figures.keys())) + "]"
+
+#----------------------------------------------------------------------------------------------------------------------------#
+
+class Animation:
+    def __init__(self, identifier):
+        self.identifier = identifier
+        self.viewports = {}
+
+    def add_viewport(self, viewport):
+        self.viewports[viewport.identifier] = viewport
+
+    def __str__(self):
+        return "Animation: " + self.identifier + ", viewports=[" + str(', '.join(self.viewports.keys())) + "]"
+        
+#----------------------------------------------------------------------------------------------------------------------------#
+
+class AdvFigure:
+    def __init__(self, obj):
+        self.key = obj.identifier
+        self.reference_point = None
+        self.visible = False
+        self.stroke_color = (0,0,0)
+        self.stroke_thickness = 2
+
+    def draw(self, mat):
+        pass
+
+#----------------------------------------------------------------------------------------------------------------------------#
+
+class AdvGridFigure(AdvFigure):
+    def __init__(self, grid_obj):
+        super().__init__(grid_obj)
+        self.width = int(round(grid_obj.width / Scale.SCALE_FROM.value * Scale.SCALE_TO.value))
+        self.height = int(round(grid_obj.height / Scale.SCALE_FROM.value * Scale.SCALE_TO.value))
+        self.step = int(round(grid_obj.step / Scale.SCALE_FROM.value * Scale.SCALE_TO.value))
+        self.margin = int(round(grid_obj.margin / Scale.SCALE_FROM.value * Scale.SCALE_TO.value))
+        self.color = grid_obj.color.value
+        self.line = grid_obj.line
+        self.drawn = False
+
+    def draw(self, mat):
+        # if not visible do nothing
+        if not self.visible:
+            return
+
+        print('  Drawing grid ' + self.key)
+
+        if not self.drawn:
+            # Calculate the number of cells in each row and column based on available space
+            size_width = int(round(self.width / (self.step + self.margin)))
+            size_height = int(round(self.height / (self.step + self.margin)))
+
+            # Draw vertical lines
+            for i in range(size_width + 1):
+                x = i * (self.step + self.margin)
+                cv.line(mat, (x, 0), (x, self.height), self.color, lineType=cv.LINE_AA, thickness=1)
+
+            # Draw horizontal lines
+            for i in range(size_height + 1):
+                y = i * (self.step + self.margin)
+                cv.line(mat, (0, y), (self.width, y), self.color, lineType=cv.LINE_AA, thickness=1)
+
+            self.drawn = True
+
+#----------------------------------------------------------------------------------------------------------------------------#
+
+class AdvStateFigure(AdvFigure):
+    def __init__(self, state_obj, origin):
+        super().__init__(state_obj)
+        self.initial = state_obj.initial
+        self.accepting = state_obj.accepting
+        self.highlighted = state_obj.highlighted
+        self.reference_point = origin
+        self.radius = 0.5
+
+    def draw(self, mat):
+        # if not visible do nothing
+        if not self.visible:
+            return
+
+        print('  Drawing state ' + self.key)
+
+        # determine center and radius in image coordinates
+        c = self.reference_point / Scale.SCALE_FROM.value * Scale.SCALE_TO.value
+        center = c.roundToInt()
+        r = int(round(self.radius / Scale.SCALE_FROM.value * Scale.SCALE_TO.value))
+
+        # draw state shape
+        cv.circle(mat, center, r, self.stroke_color, self.stroke_thickness)
+
+        if self.highlighted == True:
+            cv.circle(mat, center, r - self.stroke_thickness, (0, 255, 255), -1)
+
+        if self.accepting == True:
+            r2 = int(round(0.8 * self.radius / Scale.SCALE_FROM.value * Scale.SCALE_TO.value))
+            cv.circle(mat, center, r2, self.stroke_color, self.stroke_thickness)
+
+        # draw arrow to initial state
+        if self.initial == True:
+            arrow_tip_x = int(center[0] - r - 5)
+            arrow_tip_y = int(center[1] - r * np.sin(np.pi))
+            arrow_tip = (arrow_tip_x, arrow_tip_y)
+
+            arrow_start_x = int(center[0] - 3*r)
+            arrow_start_y = int(center[1])
+            arrow_start = (arrow_start_x, arrow_start_y)
+
+            cv.arrowedLine(mat, arrow_start, arrow_tip, self.stroke_color, self.stroke_thickness, tipLength=0.35)
+
+        # draw label 
+        sz,_ = cv.getTextSize(self.key, cv.FONT_HERSHEY_SIMPLEX, 0.8, self.stroke_thickness)
+        c = c + Point(-sz[0]/2, sz[1]/2)
+        center = c.roundToInt()
+        cv.putText(mat, self.key, center, cv.FONT_HERSHEY_SIMPLEX, 0.8, self.stroke_thickness)
+
+#----------------------------------------------------------------------------------------------------------------------------#
+
+class AdvTransitionFigure(AdvFigure):
+    def __init__(self, transition_obj):
+        super().__init__(transition_obj)
+        self.label = transition_obj.get_label_description()
+        self.label_alignment = transition_obj.label_alignment
+        self.label_reference_point = transition_obj.label_reference_point
+        self.arrow_points = []
+
+    def draw(self, mat):
+        # if not visible do nothing
+        if not self.visible:
+            return
+
+        print('Drawing transition ' + self.key)
+
+        # convert arrow's points to image coordinates
+        points = []
+        for p in self.arrow_points:
+            p1 = p / Scale.SCALE_FROM.value * Scale.SCALE_TO.value
+            points.append(p1.roundToInt())
+
+        print(points)
+        # draw the arrow, assuming there are at least 2 points
+        for i, p in enumerate(points[:-2]):
+            cv.line(mat, p, points[i+1], self.stroke_color, self.stroke_thickness)
+        cv.arrowedLine(mat, points[-2], points[-1], self.stroke_color, self.stroke_thickness)
+
+        # draw the transition label
+        p = self.label_reference_point / Scale.SCALE_FROM.value * Scale.SCALE_TO.value
+        p = p.roundToInt()
+        cv.putText(mat, self.label, p, cv.FONT_HERSHEY_SIMPLEX, 0.6, self.stroke_thickness)
+
+#----------------------------------------------------------------------------------------------------------------------------#
+
+class AdvLoopTransitionFigure(AdvTransitionFigure):
+    def __init__(self, transition_obj, p):
+        super().__init__(transition_obj)
+
+        # set arrow points
+        p1 = p + Point(-0.2, -0.6)
+        self.arrow_points.append(p1)
+        p1 = p1 + Point(-0.2, -0.3)
+        pleft = p1
+        self.arrow_points.append(p1)
+        p1 = p1 + Point(0.8, 0.0)
+        pright = p1
+        self.arrow_points.append(p1)
+        p1 = p1 + Point(-0.2, 0.3)
+        self.arrow_points.append(p1)
+
+        # set label reference point according to alignment
+        # if no reference point was given for the label, calculate it according to transition arrow points
+        p = None if self.label_reference_point is None else self.label_reference_point
+    
+        if self.label_alignment == Align.ABOVE_LEFT:
+            p = (pleft if p is None else p) + Point(0.2, -0.25)
+
+        elif self.label_alignment == Align.ABOVE_RIGHT:
+            sz,_ = cv.getTextSize(self.label, cv.FONT_HERSHEY_SIMPLEX, 0.6, self.stroke_thickness)
+            p = (pright if p is None else p) - Point(0.4 + sz[0] * Scale.SCALE_FROM.value / Scale.SCALE_TO.value, 0.25)
+
+        elif self.label_alignment == Align.BELOW_CENTERED:
+            p = (pleft + pright) / 2 if p is None else p
+            sz,_ = cv.getTextSize(self.label, cv.FONT_HERSHEY_SIMPLEX, 0.6, self.stroke_thickness)
+            text_width = sz[0] * Scale.SCALE_FROM.value / Scale.SCALE_TO.value
+            text_height = sz[1] * Scale.SCALE_FROM.value / Scale.SCALE_TO.value
+            p = Point(p.x - text_width / 2, p.y + text_height / 2 + 0.35)
+
+        elif self.label_alignment == Align.BELOW_LEFT:
+            p = (pleft if p is None else p) + Point(0.2, 0.35)
+
+        elif self.label_alignment == Align.BELOW_RIGHT:
+            sz,_ = cv.getTextSize(self.label, cv.FONT_HERSHEY_SIMPLEX, 0.6, self.stroke_thickness)
+            p = (pright if p is None else p) - Point(0.4 + sz[0] * Scale.SCALE_FROM.value / Scale.SCALE_TO.value, -0.35)
+
+        else: # default is above centered
+            p = (pleft + pright) / 2 if p is None else p
+            sz,_ = cv.getTextSize(self.label, cv.FONT_HERSHEY_SIMPLEX, 0.6, self.stroke_thickness)
+            text_width = sz[0] * Scale.SCALE_FROM.value / Scale.SCALE_TO.value
+            text_height = sz[1] * Scale.SCALE_FROM.value / Scale.SCALE_TO.value
+            p = Point(p.x - text_width / 2, p.y - text_height / 2 - 0.25)
+
+        self.label_reference_point = p
+        
+#----------------------------------------------------------------------------------------------------------------------------#
+
+class AdvLineTransitionFigure(AdvTransitionFigure):
+    def __init__(self, transition_obj, p1, p2):
+        super().__init__(transition_obj)
+
+        # set arrow points
+        p21 = p2 - p1
+        d = p21 / p21.norm() * 0.7
+        pa = p1 + d
+        self.arrow_points.append(pa)
+        pb = p2 -d
+        self.arrow_points.append(pb)
+
+        # set label reference point according to alignment
+        # if no reference point was given for the label, calculate it according to transition arrow points
+        p = None if self.label_reference_point is None else self.label_reference_point
+    
+        if self.label_alignment == Align.ABOVE_LEFT:
+            p = (pa if p is None else p) + Point(0.2, -0.25)
+
+        elif self.label_alignment == Align.ABOVE_RIGHT:
+            sz,_ = cv.getTextSize(self.label, cv.FONT_HERSHEY_SIMPLEX, 0.6, self.stroke_thickness)
+            p = (pb if p is None else p) - Point(0.4 + sz[0] * Scale.SCALE_FROM.value / Scale.SCALE_TO.value, 0.25)
+
+        elif self.label_alignment == Align.BELOW_CENTERED:
+            p = (pa + pb) / 2 if p is None else p
+            sz,_ = cv.getTextSize(self.label, cv.FONT_HERSHEY_SIMPLEX, 0.6, self.stroke_thickness)
+            text_width = sz[0] * Scale.SCALE_FROM.value / Scale.SCALE_TO.value
+            text_height = sz[1] * Scale.SCALE_FROM.value / Scale.SCALE_TO.value
+            p = Point(p.x - text_width / 2, p.y + text_height / 2 + 0.35)
+
+        elif self.label_alignment == Align.BELOW_LEFT:
+            p = (pa if p is None else p) + Point(0.2, 0.35)
+
+        elif self.label_alignment == Align.BELOW_RIGHT:
+            sz,_ = cv.getTextSize(self.label, cv.FONT_HERSHEY_SIMPLEX, 0.6, self.stroke_thickness)
+            p = (pb if p is None else p) - Point(0.4 + sz[0] * Scale.SCALE_FROM.value / Scale.SCALE_TO.value, -0.35)
+
+        else: # default is above centered
+            p = (pa + pb) / 2 if p is None else p
+            sz,_ = cv.getTextSize(self.label, cv.FONT_HERSHEY_SIMPLEX, 0.6, self.stroke_thickness)
+            text_width = sz[0] * Scale.SCALE_FROM.value / Scale.SCALE_TO.value
+            text_height = sz[1] * Scale.SCALE_FROM.value / Scale.SCALE_TO.value
+            p = Point(p.x - text_width / 2, p.y - text_height / 2 - 0.25)
+
+        self.label_reference_point = p
+
+#----------------------------------------------------------------------------------------------------------------------------#
+
+<stats(stat)>
+
+>>
+
+stats(stat) ::= <<
+<if(stat)><stat; separator="\n"><endif>
+>>
+
+init(value) ::= "<if(value)><value><endif>"
+decl(var, value) ::= <<
+<var> = <init(value)>
+>>
+
+callMethod(stat, obj, method, args) ::= <<
+<stats(stat)>
+<obj>.<method>(<if(args)><args; separator=", "><endif>)
+>>
+
+modifyAtribute(obj, attrib, value) ::= <<
+<obj>.<attrib> = <value>
+>>
+
+forEach(var, iterable, stat) ::= <<
+for <var> in <iterable>:
+    <stats(stat)>
+>>
+
+conditional(condition, stat) ::= <<
+if <condition>:
+    <stats(stat)>
+>>
+
+whileLoop(condition, stat) ::= <<
+while <condition>:
+    <stats(stat)>
+>>
+
+readInput(prompt) ::= <<
+input(<if(prompt)><prompt><endif>)
+>>
+
+printOutput(output) ::= <<
+print(<output>)
+>>
+
+point(x, y, type) ::= <<
+Point(<x>, <y>, <type>)
+>>
+
+state(var, identifier) ::= <<
+<var> = State(<identifier>)
+>>
+
+transition(var, identifier, from_state, to_state, symbols) ::= <<
+<var> = Transition(<identifier>, <from_state>, <to_state>, <symbols>)
+>>
+
+grid(var, identifier, dimensions, step, margin, color, line) ::= <<
+<var> = Grid(<identifier>, <dimensions>, <step>, <margin>, <color>, <line>)
+>>
+
+viewport(var, identifier, associated_view, point1, point2) ::= <<
+<var> = Viewport(<identifier>, <associated_view>, <point1>, <point2>)
+>>
+
+automaton(var, identifier, type, alphabet) ::= <<
+<var> = Automaton(<identifier>, <type>, <alphabet>)
+>>
+
+view(var, identifier, associated_automaton) ::= <<
+<var> = View(<identifier>, <associated_automaton>)
+>>
+
+animation(var, identifier) ::= <<
+<var> = Animation(<identifier>)
+>>
+
+stateFigure(var, state_obj, origin) ::= <<
+<var> = AdvStateFigure(<state_obj>, <origin>)
+>>
+
+loopTransitionFigure(var, transition_obj, origin) ::= <<
+<var> = AdvLoopTransitionFigure(<transition_obj>, <origin>)
+>>
+
+lineTransitionFigure(var, transition_obj, origin, destination) ::= <<
+<var> = AdvLineTransitionFigure(<transition_obj>, <origin>, <destination>)
+>>
+
+gridFigure(var, grid_obj) ::= <<
+<var> = AdvGridFigure(<grid_obj>)
+>>
+
+show(animation, viewport) ::= <<
+cv.imshow("Animation " + <animation>.identifier + " --> Viewport " + <viewport>.identifier, <viewport>.port)
+cv.moveWindow("Animation " + <animation>.identifier + " --> Viewport " + <viewport>.identifier, <viewport>.corner_x, <viewport>.corner_y)
+>>
+
+pause() ::= <<
+cv.waitKey(0)
+>>
+
+play(animation) ::= <<
+print("---------------------------------------------------------")
+print("End of animation " + <animation>.identifier)
+print("---------------------------------------------------------")
+>>

@@ -1,0 +1,52 @@
+/* Terceiro exemplo, neste caso sem manipulacao de automatos, apenas para demonstrar melhor a capacidade de expressoes e instrucoes especificas
+*  Contem operaçoes entre expressoes
+*  Contem expressoes booleanas (conjuncao, disjuncao, negacao)
+*  Contem leitura de texto do terminal
+*  Contem escrita de texto para o terminal
+*  Contem instrucoes condicionais
+*  Contem instrucoes de repeticao
+------------------------------------------------------------------------------------------------------------------------------------------------
+*/
+
+alphabet {'a'} // Apenas definido pois tem de ser sempre a primeira instrucao do programa
+
+point p1, p2;
+p1 = (200:10);
+p2 = (10,10) / 2 + p1 * 5;
+print(p2);
+
+integer a1;
+a1 = 20 + 10 / 10 * 2^2; // a1 tem como valor 24.0
+
+print(a1);
+
+if(a1 == 60.0 || a1 < 100 && a1 > 10) {
+    print("10 < a1 < 100");
+}
+
+print("-----------------------------------------------------------");
+
+string input;
+input = read [prompt="Introduza uma mensagem: "];
+
+print("O sua mensagem introduzida foi: ");
+print(input);
+
+print("-----------------------------------------------------------");
+
+integer a;
+a = 0;
+while(True) {
+    if(!a != 0) {
+        print("A contagem até 10 vai começar!");
+    }
+    if(a == 5) {
+        print("Contagem irá parar daqui a 5 ticks!");
+    }
+    if(a == 10) {
+        print("A contagem terminou!");
+        break;
+    }
+    print(a);
+    a = a + 1;
+}
