@@ -69,7 +69,7 @@ Additionally, the language has specific functionalities and data types related t
 
 ### Detailed description/usage 
 In the directory **examples** there are 3 scripts that together allow the testing of the languages:
-- build.sh - used to compile the language compiler
+- build.sh - used to compile the language compiler from its source code
 - compile.sh - used to compile an adv file into a python file
 - run.sh - used to run the newly obtained python file
 
@@ -80,9 +80,9 @@ There are also 3 test files that demonstrate the functionalities of the language
 
 An example of a full test would be (assuming you are in the directory **examples**):
 ```
-./build.sh
-./compile.sh test_01.adv
-./run.sh test_01.py
+./build.sh                    # compile the language compiler (this step needs to be performed only once)
+./compile.sh test_01.adv      # compile test_01.adv into a python file
+./run.sh test_01.py           # run the python file
 ```
 
 https://github.com/LuisFilipeCouto/Project_C/assets/70239504/ef6730e6-ad19-43cf-afab-bf1c03b841ee
